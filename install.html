@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GuildBook - Download</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#14111f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: #14111f; color: #ece8ff; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px 16px; text-align: center; }
+  main { width: min(520px, 100%); }
+  img { width: 128px; height: 128px; border-radius: 28px; border: 3px solid #f5c542; margin-bottom: 18px; }
+  h1 { margin: 0 0 6px; font-size: clamp(34px, 9vw, 48px); color: #f5c542; letter-spacing: 1px; }
+  p { margin: 0 0 26px; font-size: 18px; color: #9a93c0; line-height: 1.4; }
+  button { display: block; width: 100%; padding: 22px 16px; font: inherit; font-size: clamp(24px, 7vw, 34px); font-weight: 700; letter-spacing: 1px; cursor: pointer;
+    color: #14111f; background: #8b6cff; border: 0; border-radius: 16px; box-shadow: 0 0 28px #8b6cff66; }
+  button:hover { background: #a38aff; }
+  button:active { transform: translateY(2px); }
+  button:disabled { background: #241f3a; color: #9a93c0; box-shadow: none; cursor: default; transform: none; }
+  #note { margin: 22px 0 0; font-size: 17px; color: #f5c542; line-height: 1.5; min-height: 26px; }
+  a { display: inline-block; margin-top: 18px; color: #c4b2ff; font-size: 15px; }
+  #sub { margin: 12px 0 0; font-size: 14px; color: #9a93c0; }
+</style>
+</head>
+<body>
+<main>
+  <img src="icon-512.png" alt="">
+  <h1>GuildBook</h1>
+  <p>Download the app. It runs offline and keeps your character on your device.</p>
+  <button id="btn" type="button">DOWNLOAD</button>
+  <div id="note"></div>
+  <div id="sub"></div>
+  <a href="index.html">Or just open it in the browser</a>
+</main>
+<script>
+(function () {
+  var btn = document.getElementById('btn'), note = document.getElementById('note'), sub = document.getElementById('sub'), prompt = null;
+  var ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var standalone = (window.matchMedia && matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches) || navigator.standalone === true;
+  function hint() {
+    note.textContent = ios
+      ? 'Tap the SHARE button of Safari (square with an arrow), then "Add to Home Screen".'
+      : 'Open your browser menu and choose "Install GuildBook" or "Install app" (Chrome, Edge) or "Add to Home Screen" (mobile).';
+  }
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
+  if (standalone) { btn.textContent = 'ALREADY INSTALLED'; btn.disabled = true; note.textContent = 'Open GuildBook from your desktop or home screen.'; return; }
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); prompt = e; note.textContent = ''; });
+  window.addEventListener('appinstalled', function () { prompt = null; btn.textContent = 'INSTALLED!'; btn.disabled = true; note.textContent = 'Open GuildBook from your desktop or home screen.'; sub.textContent = ''; });
+  btn.addEventListener('click', function () {
+    if (prompt) { var p = prompt; prompt = null; try { p.prompt(); } catch (e) { hint(); } }
+    else hint();
+  });
+})();
+</script>
+</body>
+</html>

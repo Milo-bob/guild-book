@@ -1,0 +1,107 @@
+:root{
+  /* Diese fünf werden per Design-Einstellung (app.js) überschrieben, der Rest leitet sich daraus ab */
+  --bg:#14111f; --card:#241f3a; --text:#ece8ff; --gold:#f5c542; --accent:#8b6cff;
+  --bg2:color-mix(in srgb,var(--bg) 90%,var(--text));
+  --line:color-mix(in srgb,var(--bg) 78%,var(--text));
+  --muted:color-mix(in srgb,var(--text) 58%,var(--bg));
+  --font:system-ui,-apple-system,"Segoe UI",sans-serif;
+  --good:#4cd38a; --bad:#e5604d;
+  --nav:64px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 var(--font)}
+body{min-height:100vh;padding-bottom:calc(var(--nav) + env(safe-area-inset-bottom) + 16px)}
+button,input,select,textarea{font:inherit;color:inherit}
+
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;
+  padding:calc(10px + env(safe-area-inset-top)) 16px 10px;background:linear-gradient(var(--bg),rgba(20,17,31,.92));
+  border-bottom:1px solid var(--line);backdrop-filter:blur(6px)}
+.brand{font-weight:700;letter-spacing:.5px}
+.chips{display:flex;gap:8px}
+.chip{background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:14px}
+.chip.gold b{color:var(--gold)} .chip.sp b{color:var(--accent)}
+
+main{max-width:640px;margin:0 auto;padding:16px}
+h2{margin:20px 0 10px;font-size:15px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+h2:first-child{margin-top:0}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
+.muted{color:var(--muted);font-size:14px}
+.small{font-size:13px}
+
+.tabs{position:fixed;left:0;right:0;bottom:0;max-width:640px;margin:0 auto;z-index:5;display:flex;height:calc(var(--nav) + env(safe-area-inset-bottom));
+  padding-bottom:env(safe-area-inset-bottom);background:var(--bg2);border-top:1px solid var(--line)}
+.tabs button{flex:1;background:none;border:0;color:var(--muted);font-size:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer}
+.tabs button i{font-style:normal;font-size:22px}
+.tabs button.on{color:var(--text);box-shadow:inset 0 3px 0 var(--accent)}
+
+.btn{background:var(--accent);border:0;border-radius:10px;padding:9px 14px;font-weight:600;cursor:pointer}
+.btn.ghost{background:transparent;border:1px solid var(--line)}
+.btn.danger{background:var(--bad)}
+.btn.sm{padding:5px 10px;font-size:13px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* Held */
+.hero{display:flex;gap:14px;align-items:center}
+.avatar{width:76px;height:76px;border-radius:50%;background:var(--bg2);border:2px solid var(--gold);display:grid;place-items:center;font-size:42px;flex:none}
+.hero h1{margin:0;font-size:22px}
+.lvl{color:var(--gold);font-weight:700}
+.bar{height:10px;background:var(--bg2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+.bar>div{height:100%;background:var(--accent);transition:width .4s}
+.bar.xp>div{background:var(--gold)}
+label.f input[type=color]{height:42px;padding:2px}
+.tabs button{font-size:10px}
+.stat{display:grid;grid-template-columns:28px 1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.stat .bar{grid-column:2/4}
+.stat b{font-size:14px}
+.radar{display:block;margin:0 auto;width:100%;max-width:260px}
+.radar polygon{fill:none;stroke:var(--line)}
+.radar .data{fill:rgba(139,108,255,.35);stroke:var(--accent);stroke-width:2}
+.radar text{font-size:14px;text-anchor:middle;dominant-baseline:middle}
+.pill{display:inline-block;background:var(--bg2);border:1px solid var(--line);border-radius:99px;padding:2px 10px;margin:2px 4px 2px 0;font-size:13px}
+
+/* Quests */
+.quest{display:flex;align-items:center;gap:12px}
+.check{width:38px;height:38px;border-radius:10px;border:2px solid var(--accent);background:transparent;font-size:20px;cursor:pointer;flex:none;display:grid;place-items:center}
+.quest.done .check{background:var(--good);border-color:var(--good);color:#06210f}
+.quest.done .qt{text-decoration:line-through;color:var(--muted)}
+.quest .qt{flex:1;min-width:0}
+.quest .qt b{display:block;overflow-wrap:anywhere}
+.reward{font-size:13px;color:var(--gold);white-space:nowrap}
+.edit{background:none;border:0;color:var(--muted);font-size:20px;cursor:pointer;padding:4px 8px}
+.diff{letter-spacing:-2px}
+
+/* Skills */
+.branch h3{margin:0 0 8px;font-size:16px}
+.tier{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.arrow{text-align:center;color:var(--line);line-height:1;margin:4px 0}
+.node{flex:1 1 140px;max-width:200px;background:var(--bg2);border:2px solid var(--line);border-radius:12px;padding:10px;text-align:center;cursor:pointer;font-size:14px}
+.node .ic{font-size:26px}
+.node.avail{border-color:var(--accent)}
+.node.got{border-color:var(--gold);background:rgba(245,197,66,.08)}
+.node.locked{opacity:.5}
+.node small{display:block;color:var(--muted);margin-top:2px}
+
+/* Shop */
+.item{display:flex;align-items:center;gap:12px}
+.item .ic{font-size:30px}
+.item .qt{flex:1}
+
+dialog{width:min(92vw,440px);background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:16px;padding:18px;max-height:90vh;overflow:auto}
+dialog::backdrop{background:rgba(0,0,0,.65)}
+dialog h3{margin:0 0 12px}
+label.f{display:block;margin-bottom:12px;font-size:13px;color:var(--muted)}
+label.f input,label.f select,label.f textarea{display:block;width:100%;margin-top:4px;padding:9px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;font-size:16px}
+.checks{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.checks label{color:var(--text);font-size:14px;display:flex;gap:8px;align-items:center}
+.row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--nav) + env(safe-area-inset-bottom) + 14px);z-index:20;
+  background:#000d;border:1px solid var(--gold);padding:10px 16px;border-radius:12px;max-width:90vw;display:flex;gap:12px;align-items:center;text-align:center}
+#toast button{background:none;border:0;color:var(--gold);font-weight:700;cursor:pointer}
+#toast.big{font-size:20px;border-width:2px;animation:pop .5s}
+@keyframes pop{from{transform:translateX(-50%) scale(.6);opacity:0}}
+
+.logline{padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.logline time{color:var(--muted);font-size:12px;display:block}
+.empty{text-align:center;color:var(--muted);padding:24px 8px}

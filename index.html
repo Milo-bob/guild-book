@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GuildBook</title>
+<meta name="theme-color" content="#14111f">
+<meta name="description" content="Your real-life character sheet with quest log, skill tree and rewards.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">📖 GuildBook</div>
+  <div class="chips">
+    <span class="chip gold" title="Gold">🪙 <b id="gold">0</b></span>
+    <span class="chip sp" title="Skill points">✨ <b id="sp">0</b></span>
+  </div>
+</header>
+
+<main id="view"></main>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="hero"><i>🧙</i>Hero</button>
+  <button data-tab="quests"><i>📜</i>Quests</button>
+  <button data-tab="skills"><i>🌳</i>Skills</button>
+  <button data-tab="shop"><i>🛒</i>Shop</button>
+  <button data-tab="log"><i>📖</i>Chronicle</button>
+  <button data-tab="setup"><i>⚙️</i>Setup</button>
+</nav>
+
+<dialog id="dlg"></dialog>
+<div id="toast" hidden></div>
+<input type="file" id="importFile" accept="application/json" hidden>
+
+<script src="app.js"></script>
+</body>
+</html>
