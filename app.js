@@ -30,7 +30,10 @@ const FONTS = {
   mono: 'ui-monospace,Consolas,monospace',
 };
 const STAT_COLORS = ['#e5604d', '#4cb5f5', '#8b6cff', '#f5a742', '#e86bc1', '#4cd38a', '#f5d742', '#9aa5b1'];
-const defaultSettings = () => ({ charBase: 100, statBase: 60, streakStep: 10, streakMax: 10, preset: 'dragon', theme: (({ label, ...c }) => c)(THEMES.dragon), font: 'fantasy', bgImage: '', bgDim: 70 });
+const defaultSettings = () => ({ charBase: 100, statBase: 60, streakStep: 10, streakMax: 10, preset: 'dragon', theme: (({ label, ...c }) => c)(THEMES.dragon), font: 'fantasy', bgImage: '', bgDim: 70, hpOn: true });
+const STAT_CLASS = { kor: 'Warrior', geist: 'Wizard', disz: 'Paladin', soz: 'Bard', krea: 'Artificer', fok: 'Monk' };
+const TIERS = [[20, 'Grandmaster'], [15, 'Master'], [10, 'Expert'], [5, 'Adept'], [1, 'Novice']];
+const REWARD_KINDS = [['', 'Normal reward'], ['shield', '🛡️ Streak shield (+1 shield)'], ['potion', '🧪 Healing potion (+10 HP)']];
 const ALIGNMENTS = ['Lawful Good', 'Neutral Good', 'Chaotic Good', 'Lawful Neutral', 'True Neutral', 'Chaotic Neutral', 'Lawful Evil', 'Neutral Evil', 'Chaotic Evil'];
 const CHAR_KEYS = ['avatar', 'avatarImg', 'name', 'title', 'race', 'background', 'alignment', 'bio'];
 
@@ -71,7 +74,7 @@ function defaults() {
   const stats = [
     ['kor', 'Body', '💪'], ['geist', 'Mind', '🧠'], ['disz', 'Discipline', '🛡️'],
     ['soz', 'Social', '💬'], ['krea', 'Creativity', '🎨'], ['fok', 'Focus', '🎯'],
-  ].map(([id, name, icon], i) => ({ id, name, icon, color: STAT_COLORS[i], xp: 0 }));
+  ].map(([id, name, icon], i) => ({ id, name, icon, color: STAT_COLORS[i], cls: STAT_CLASS[id], xp: 0 }));
   // [id, stat, name, icon, Kosten, Mindest-Statlevel, Voraussetzung, Beschreibung]
   const sk = [
     ['kor1', 'kor', 'Early Bird', '🌅', 1, 1, [], 'Get up early, consistently'],
@@ -103,7 +106,10 @@ function defaults() {
       { id: uid(), title: 'Read 20 pages', stat: 'geist', diff: 1, type: 'daily', done: false, lastDone: null, streak: 0 },
       { id: uid(), title: 'Tidy up the apartment', stat: 'disz', diff: 2, type: 'once', done: false, lastDone: null, streak: 0 },
     ],
+    hp: 20, shields: 0, lastCheck: today(), bosses: [], hpIntro: true,
     rewards: [
+      { id: uid(), name: 'Streak shield', icon: '🛡️', cost: 100, count: 0, kind: 'shield' },
+      { id: uid(), name: 'Healing potion', icon: '🧪', cost: 40, count: 0, kind: 'potion' },
       { id: uid(), name: 'One episode of a show', icon: '📺', cost: 30, count: 0 },
       { id: uid(), name: 'Order your favorite food', icon: '🍕', cost: 150, count: 0 },
       { id: uid(), name: 'Buy a new game / book', icon: '🎁', cost: 500, count: 0 },
@@ -117,6 +123,14 @@ function migrate(d) {
   d.settings.theme = { ...THEMES.night, ...d.settings.theme };
   d.diffs ||= defaultDiffs();
   d.char = { race: '', background: '', alignment: '', avatarImg: '', ...d.char };
+  d.hp ??= 20 + 4 * (levelOf(d.xp || 0, d.settings.charBase) - 1);
+  d.shields ??= 0; d.bosses ||= []; d.lastCheck ||= today();
+  d.quests.forEach(q => q.created ||= today());
+  d.stats.forEach(s => { if (s.cls === undefined) s.cls = STAT_CLASS[s.id] || ''; });
+  if (!d.hpIntro) {
+    d.hpIntro = true;
+    d.rewards.unshift({ id: uid(), name: 'Streak shield', icon: '🛡️', cost: 100, count: 0, kind: 'shield' }, { id: uid(), name: 'Healing potion', icon: '🧪', cost: 40, count: 0, kind: 'potion' });
+  }
   d.stats.forEach((s, i) => s.color ||= STAT_COLORS[i % STAT_COLORS.length]);
   if (d.setupDone === undefined) d.setupDone = true;
   return d;
@@ -160,13 +174,68 @@ function completeQuest(id) {
   const xp = Math.round(b.xp * mult * bonusFor(q.stat)), gold = Math.round(b.gold * mult);
   const lvBefore = levelOf(S.xp, CHAR_BASE), stBefore = levelOf(stat(q.stat).xp, STAT_BASE);
   S.xp += xp; S.gold += gold; stat(q.stat).xp += xp;
+  const slain = hitBosses(q, xp);
   const lvAfter = levelOf(S.xp, CHAR_BASE), stAfter = levelOf(stat(q.stat).xp, STAT_BASE);
   S.sp += lvAfter - lvBefore;
+  S.hp = lvAfter > lvBefore ? maxHp() : Math.min(maxHp(), S.hp + 1 + q.diff);
   addLog(`✅ ${q.title}  (+${xp} XP, +${gold} 🪙)`);
   save(); render();
-  if (lvAfter > lvBefore) { addLog(`🎉 Reached level ${lvAfter}! +${lvAfter - lvBefore} skill point(s)`); save(); toast(`🎉 LEVEL ${lvAfter}! +${lvAfter - lvBefore} ✨`, true, true); }
+  if (slain.length) toast(`⚔️ ${slain.map(b => b.name).join(', ')} defeated! +${slain.reduce((a, b) => a + b.gold, 0)} 🪙`, true, true);
+  else if (lvAfter > lvBefore) { addLog(`🎉 Reached level ${lvAfter}! +${lvAfter - lvBefore} skill point(s)`); save(); toast(`🎉 LEVEL ${lvAfter}! +${lvAfter - lvBefore} ✨`, true, true); }
   else if (stAfter > stBefore) { addLog(`⬆️ ${stat(q.stat).name} Level ${stAfter}`); save(); toast(`⬆️ ${stat(q.stat).name} Lv ${stAfter}`, true, true); }
   else toast(`+${xp} XP · +${gold} 🪙`, true);
+}
+
+/* ---------- HP, Bosse, Klassen-Pfad ---------- */
+const maxHp = () => 20 + 4 * (levelOf(S.xp, CHAR_BASE) - 1);
+
+// Jede erledigte Quest richtet Schaden (= XP) an allen passenden Bossen an
+function hitBosses(q, xp) {
+  const slain = [];
+  S.bosses.filter(b => !b.defeated && (!b.stat || b.stat === q.stat)).forEach(b => {
+    b.hp = Math.max(0, b.hp - xp);
+    if (b.hp > 0) return;
+    b.defeated = true; S.gold += b.gold; S.xp += b.xp; slain.push(b);
+    addLog(`⚔️ Boss defeated: ${b.icon} ${b.name} (+${b.gold} 🪙, +${b.xp} XP)`);
+  });
+  return slain;
+}
+
+// Höchstes Attribut bestimmt den Pfad, dessen Level die Rangstufe
+function pathOf() {
+  const top = [...S.stats].sort((a, b) => b.xp - a.xp)[0];
+  if (!top || top.xp === 0) return null;
+  const lv = levelOf(top.xp, STAT_BASE), tier = TIERS.find(([min]) => lv >= min)[1];
+  return { label: `${tier} ${top.cls || top.name}`, icon: top.icon, color: top.color };
+}
+
+// Tageswechsel: verpasste Dailies/Wochenquests kosten HP, Streak-Schilde retten den Streak
+function rollover() {
+  const t = today(); if (!S.lastCheck || S.lastCheck >= t) { S.lastCheck = t; return; }
+  const notes = []; let dmg = 0, shields = 0;
+  const d = new Date(S.lastCheck + 'T12:00:00'); d.setDate(d.getDate() + 1);
+  for (let guard = 0; dstr(d) < t && guard < 30; d.setDate(d.getDate() + 1), guard++) {
+    const D = dstr(d);
+    const missed = S.quests.filter(q => q.type === 'daily' && (q.created || '') < D && (q.lastDone || '') < D);
+    if (missed.length) {
+      if (S.shields > 0 && missed.some(q => q.streak > 0)) { S.shields--; shields++; missed.forEach(q => { if (q.streak > 0) q.lastDone = D; }); }
+      else if (S.settings.hpOn) dmg += missed.reduce((a, q) => a + 2 * (q.diff + 1), 0);
+    }
+    if (d.getDay() === 0 && S.settings.hpOn) {   // Sonntag = Wochenende
+      const wk = monday(D);
+      dmg += S.quests.filter(q => q.type === 'weekly' && (q.created || '') < wk && !(q.lastDone && monday(q.lastDone) >= wk)).reduce((a, q) => a + 4 * (q.diff + 1), 0);
+    }
+  }
+  S.lastCheck = t;
+  if (shields) { notes.push(`🛡️ ${shields} streak shield${shields > 1 ? 's' : ''} used`); addLog(`🛡️ Streak shield used (${shields}×)`); }
+  if (dmg) { S.hp -= dmg; notes.push(`💔 −${dmg} HP from missed quests`); addLog(`💔 Missed quests cost ${dmg} HP`); }
+  if (S.hp <= 0) {
+    const lost = Math.floor(S.gold / 2); S.gold -= lost; S.hp = Math.ceil(maxHp() / 2);
+    notes.push(`💀 You fell! Lost ${lost} 🪙, back up with ${S.hp} HP`); addLog(`💀 You fell and lost ${lost} 🪙`);
+  }
+  S.hp = Math.max(0, Math.min(S.hp, maxHp()));
+  save();
+  if (notes.length) setTimeout(() => toast('While you were away: ' + notes.join(' · ')), 400);
 }
 
 function skillState(s) {
@@ -194,9 +263,12 @@ function missingText(s) {
 function buy(id) {
   const r = S.rewards.find(x => x.id === id);
   if (S.gold < r.cost) return toast(`Not enough gold (${S.gold}/${r.cost} 🪙)`);
+  if (r.kind === 'potion' && S.hp >= maxHp()) return toast('You are already at full HP');
   snapshot(); S.gold -= r.cost; r.count++;
+  if (r.kind === 'shield') S.shields++;
+  if (r.kind === 'potion') S.hp = Math.min(maxHp(), S.hp + 10);
   addLog(`🛒 Reward redeemed: ${r.icon} ${r.name} (−${r.cost} 🪙)`);
-  save(); render(); toast(`${r.icon} Enjoy!`, true);
+  save(); render(); toast(r.kind === 'potion' ? `${r.icon} +10 HP` : r.kind === 'shield' ? `${r.icon} Shields: ${S.shields}` : `${r.icon} Enjoy!`, true);
 }
 
 /* ---------- Toast / Dialog ---------- */
@@ -205,7 +277,7 @@ function toast(msg, undo = false, big = false) {
   const t = $('#toast'); t.hidden = false; t.className = big ? 'big' : '';
   t.innerHTML = `<span>${esc(msg)}</span>${undo ? '<button id="undo">Undo</button>' : ''}`;
   if (undo) $('#undo').onclick = () => { if (undoSnap) { S = JSON.parse(undoSnap); undoSnap = null; save(); render(); } t.hidden = true; };
-  clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, undo ? 5000 : 3000);
+  clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, undo ? 5000 : Math.max(3000, msg.length * 70));
 }
 
 function form(title, fields, onSave, onDel) {
@@ -252,7 +324,7 @@ function editQuest(id) {
   ], o => {
     o.diff = +o.diff;
     if (id) Object.assign(q, o);
-    else S.quests.push({ id: uid(), ...o, done: false, lastDone: null, streak: 0 });
+    else S.quests.push({ id: uid(), ...o, done: false, lastDone: null, streak: 0, created: today() });
   }, id ? () => { S.quests = S.quests.filter(x => x.id !== id); } : null);
 }
 function editSkill(id) {
@@ -274,14 +346,32 @@ function editSkill(id) {
   }, id ? () => { S.skills = S.skills.filter(x => x.id !== id); S.skills.forEach(x => x.req = x.req.filter(r => r !== id)); } : null);
 }
 function editReward(id) {
-  const r = S.rewards.find(x => x.id === id) || { name: '', icon: '🎁', cost: 50 };
+  const r = S.rewards.find(x => x.id === id) || { name: '', icon: '🎁', cost: 50, kind: '' };
   form(id ? 'Edit reward' : 'New reward', [
     { key: 'name', label: 'Name', value: r.name, req: true },
     { key: 'icon', label: 'Emoji', value: r.icon },
     { key: 'cost', label: 'Price (gold)', type: 'number', value: r.cost },
+    { key: 'kind', label: 'Effect', type: 'select', value: r.kind || '', options: REWARD_KINDS },
   ], o => { if (id) Object.assign(r, o); else S.rewards.push({ id: uid(), ...o, count: 0 }); },
   id ? () => { S.rewards = S.rewards.filter(x => x.id !== id); } : null);
 }
+function editBoss(id) {
+  const b = S.bosses.find(x => x.id === id) || { name: '', icon: '🐉', desc: '', maxHp: 300, hp: 300, stat: '', gold: 150, xp: 100 };
+  form(id ? 'Edit boss' : 'New boss', [
+    { key: 'name', label: 'Name', value: b.name, req: true },
+    { key: 'icon', label: 'Emoji', value: b.icon },
+    { key: 'desc', label: 'Description / your big goal', type: 'textarea', value: b.desc },
+    { key: 'maxHp', label: 'Boss HP (every finished quest deals its XP as damage)', type: 'number', value: b.maxHp },
+    { key: 'stat', label: 'Damaged by', type: 'select', value: b.stat, options: [['', 'Any quest'], ...statOptions()] },
+    { key: 'gold', label: 'Reward: gold', type: 'number', value: b.gold },
+    { key: 'xp', label: 'Reward: XP', type: 'number', value: b.xp },
+  ], o => {
+    o.maxHp = Math.max(1, o.maxHp);
+    if (id) Object.assign(b, o, { hp: Math.min(b.hp, o.maxHp) });
+    else S.bosses.push({ id: uid(), ...o, hp: o.maxHp, defeated: false });
+  }, id ? () => { S.bosses = S.bosses.filter(x => x.id !== id); } : null);
+}
+
 const charFields = () => [
   { key: 'avatarImg', label: 'Portrait (image, optional)', type: 'image', value: S.char.avatarImg, max: 256, square: true, quality: 0.85 },
   { key: 'avatar', label: 'Avatar emoji (used if there is no portrait)', value: S.char.avatar },
@@ -304,27 +394,31 @@ function charBuilder() {
     { key: 'clvl', label: 'Overall level', type: 'number', value: levelOf(S.xp, CHAR_BASE) },
     { key: 'gold', label: 'Gold', type: 'number', value: S.gold },
     { key: 'sp', label: 'Free skill points', type: 'number', value: S.sp },
+    { key: 'hp', label: 'Current HP', type: 'number', value: S.hp },
+    { key: 'shields', label: 'Streak shields', type: 'number', value: S.shields },
     ...S.stats.map(s => ({ key: 'lv_' + s.id, label: `${s.icon} ${esc(s.name)} – current level`, type: 'number', value: levelOf(s.xp, STAT_BASE) })),
   ], o => {
     Object.assign(S.char, pickChar(o));
     S.xp = setLevel(S.xp, o.clvl, CHAR_BASE);
-    S.gold = o.gold; S.sp = o.sp;
+    S.gold = o.gold; S.sp = o.sp; S.shields = o.shields;
     S.stats.forEach(s => s.xp = setLevel(s.xp, o['lv_' + s.id], STAT_BASE));
+    S.hp = Math.min(o.hp, maxHp());
     addLog('🧙 Character values set in the builder');
   });
 }
 
 function editStat(id) {
-  const s = stat(id) || { name: '', icon: '⭐', color: STAT_COLORS[S.stats.length % STAT_COLORS.length], xp: 0 };
+  const s = stat(id) || { name: '', icon: '⭐', color: STAT_COLORS[S.stats.length % STAT_COLORS.length], cls: '', xp: 0 };
   form(id ? 'Edit attribute' : 'New attribute', [
     { key: 'name', label: 'Name', value: s.name, req: true },
     { key: 'icon', label: 'Emoji', value: s.icon },
     { key: 'color', label: 'Color', type: 'color', value: s.color },
+    { key: 'cls', label: 'Class name when this is your strongest attribute (e.g. Warrior)', value: s.cls },
     { key: 'lvl', label: 'Current level', type: 'number', value: levelOf(s.xp, STAT_BASE) },
   ], o => {
     const xp = setLevel(s.xp, o.lvl, STAT_BASE);
-    if (id) Object.assign(s, { name: o.name, icon: o.icon, color: o.color, xp });
-    else S.stats.push({ id: uid(), name: o.name, icon: o.icon, color: o.color, xp });
+    if (id) Object.assign(s, { name: o.name, icon: o.icon, color: o.color, cls: o.cls, xp });
+    else S.stats.push({ id: uid(), name: o.name, icon: o.icon, color: o.color, cls: o.cls, xp });
   }, id && S.stats.length > 1 ? () => {
     S.stats = S.stats.filter(x => x.id !== id);
     S.quests.forEach(q => { if (q.stat === id) q.stat = S.stats[0].id; });
@@ -337,7 +431,7 @@ function editStat(id) {
 /* Beliebige Änderung/Erfolg nachtragen (auch negativ) */
 function manualEntry() {
   form('✍️ Log a change', [
-    { key: 'kind', label: 'What?', type: 'select', value: 'stat', options: [['stat', 'XP in an attribute (also counts toward overall level)'], ['xp', 'Overall XP only'], ['gold', 'Gold'], ['sp', 'Skill points']] },
+    { key: 'kind', label: 'What?', type: 'select', value: 'stat', options: [['stat', 'XP in an attribute (also counts toward overall level)'], ['xp', 'Overall XP only'], ['gold', 'Gold'], ['sp', 'Skill points'], ['hp', 'HP']] },
     { key: 'stat', label: 'Attribute (only for “XP in an attribute”)', type: 'select', value: S.stats[0].id, options: statOptions() },
     { key: 'amount', label: 'Amount (negative to subtract)', type: 'number', neg: true, value: 50 },
     { key: 'note', label: 'Note (e.g. “Ran a marathon”)', value: '' },
@@ -346,12 +440,13 @@ function manualEntry() {
     const lvBefore = levelOf(S.xp, CHAR_BASE);
     if (o.kind === 'gold') S.gold = Math.max(0, S.gold + a);
     else if (o.kind === 'sp') S.sp = Math.max(0, S.sp + a);
+    else if (o.kind === 'hp') S.hp = Math.max(0, Math.min(maxHp(), S.hp + a));
     else {
       S.xp = Math.max(0, S.xp + a);
       if (o.kind === 'stat') { const st = stat(o.stat); st.xp = Math.max(0, st.xp + a); }
       const gained = levelOf(S.xp, CHAR_BASE) - lvBefore; if (gained > 0) S.sp += gained;
     }
-    const what = { stat: `${stat(o.stat)?.name} XP`, xp: 'XP', gold: '🪙', sp: '✨' }[o.kind];
+    const what = { stat: `${stat(o.stat)?.name} XP`, xp: 'XP', gold: '🪙', sp: '✨', hp: 'HP' }[o.kind];
     addLog(`✍️ ${o.note || 'Manual change'}  (${a > 0 ? '+' : ''}${a} ${what})`);
   });
 }
@@ -376,10 +471,11 @@ function editRules() {
     { key: 'statBase', label: 'XP needed for attribute level 2', type: 'number', value: st.statBase },
     { key: 'streakStep', label: 'Streak bonus per day in % (daily quests)', type: 'number', value: st.streakStep },
     { key: 'streakMax', label: 'Streak bonus counts up to day …', type: 'number', value: st.streakMax },
+    { key: 'hpOn', label: 'HP penalties: missed quests cost HP', type: 'bool', value: st.hpOn !== false },
   ], o => {
     // Level beibehalten, wenn sich die Kurve ändert
     const cl = levelOf(S.xp, CHAR_BASE), sl = S.stats.map(s => levelOf(s.xp, STAT_BASE));
-    Object.assign(st, { charBase: Math.max(1, o.charBase), statBase: Math.max(1, o.statBase), streakStep: o.streakStep, streakMax: o.streakMax });
+    Object.assign(st, { charBase: Math.max(1, o.charBase), statBase: Math.max(1, o.statBase), streakStep: o.streakStep, streakMax: o.streakMax, hpOn: o.hpOn });
     CHAR_BASE = st.charBase; STAT_BASE = st.statBase;
     S.xp = total(cl, CHAR_BASE);
     S.stats.forEach((s, i) => s.xp = total(sl[i], STAT_BASE));
@@ -439,23 +535,26 @@ function viewHero() {
   const weeklies = S.quests.filter(q => q.type === 'weekly'), weekN = weeklies.filter(questDone).length;
   const feats = S.skills.filter(s => s.unlocked);
   const best = Math.max(0, ...S.quests.map(streakOf));
-  const sub = [c.race, c.background, c.alignment].filter(Boolean).map(esc).join(' · ');
+  const sub = [c.race, c.background, c.alignment].filter(Boolean).map(esc).join(' · '), path = pathOf();
   return `
   <div class="card banner"><div class="hero">
     <div class="avatar">${avatarHtml()}</div>
     <div class="hname"><h1>${esc(c.name)}</h1>
       <div class="cls">${esc(c.title)} <span class="lvl">· Level ${p.l}</span></div>
-      <div class="muted small">${sub}</div></div>
+      <div class="muted small">${sub}</div>
+      ${path ? `<div class="path" style="--c:${esc(path.color)}">${esc(path.icon)} ${esc(path.label)}</div>` : ''}</div>
     <button class="edit" data-act="editChar" title="Edit">✎</button>
   </div>
   <div class="bar xp" style="margin-top:12px"><div style="width:${p.pct}%"></div></div>
-  <div class="xpline muted small"><span>Experience</span><span>${p.cur} / ${p.need} XP</span></div></div>
+  <div class="xpline muted small"><span>Experience</span><span>${p.cur} / ${p.need} XP</span></div>
+  <div class="bar hp" style="margin-top:10px"><div style="width:${S.hp / maxHp() * 100}%"></div></div>
+  <div class="xpline muted small"><span>❤️ Hit Points</span><span>${S.hp} / ${maxHp()} HP</span></div></div>
 
   <div class="vitals">
     <div class="vit"><b>${signed(prof)}</b><span>Prof. bonus</span></div>
     <div class="vit"><b>🔥 ${best}</b><span>Streak</span></div>
     <div class="vit"><b>${S.gold}</b><span>Gold</span></div>
-    <div class="vit"><b>${S.sp}</b><span>Skill pts</span></div>
+    <div class="vit"><b>🛡️ ${S.shields}</b><span>Shields</span></div>
   </div>
 
   <h2>Ability Scores</h2>
@@ -487,14 +586,25 @@ function questRow(q) {
     <div class="reward">+${xp} XP<br>+${gold} 🪙</div>
     <button class="edit" data-act="editQuest" data-id="${q.id}" aria-label="Edit">✎</button></div>`;
 }
+function bossCard(b) {
+  const st = b.stat ? stat(b.stat) : null;
+  return `<div class="card boss${b.defeated ? ' done' : ''}"><div class="bico">${esc(b.icon)}</div>
+    <div class="qt"><b>${esc(b.name)}</b>${b.desc ? `<div class="muted small">${esc(b.desc)}</div>` : ''}
+      <div class="bar hp" style="margin:6px 0 2px"><div style="width:${b.hp / b.maxHp * 100}%"></div></div>
+      <div class="muted small">${b.defeated ? '✔ Defeated' : `${b.hp} / ${b.maxHp} HP`} · ${st ? esc(st.icon + ' ' + st.name) + ' quests' : 'any quest'} · 🏆 +${b.gold} 🪙 +${b.xp} XP</div></div>
+    <button class="edit" data-act="editBoss" data-id="${b.id}" aria-label="Edit">✎</button></div>`;
+}
 function viewQuests() {
   const by = t => S.quests.filter(q => q.type === t);
   const once = S.quests.filter(q => q.type === 'once' && !q.done), fin = S.quests.filter(q => q.type === 'once' && q.done);
-  return `<h2>Daily quests <button class="btn sm" data-act="newQuest">+ New</button></h2>
+  const bosses = S.bosses.filter(b => !b.defeated), slain = S.bosses.filter(b => b.defeated);
+  return `<h2>Boss battles <button class="btn sm" data-act="newBoss">+ Boss</button></h2>
+    ${bosses.map(bossCard).join('') || '<div class="empty">No active boss – create one for your biggest goal.</div>'}
+    <h2>Daily quests <button class="btn sm" data-act="newQuest">+ New</button></h2>
     ${by('daily').map(questRow).join('') || '<div class="empty">No daily quests.</div>'}
     <h2>Weekly quests</h2>${by('weekly').map(questRow).join('') || '<div class="empty">No weekly quests – pick “Weekly” when creating a quest.</div>'}
     <h2>Main quests</h2>${once.map(questRow).join('') || '<div class="empty">No open quests.</div>'}
-    ${fin.length ? `<h2>Completed</h2>${fin.map(questRow).join('')}` : ''}`;
+    ${fin.length || slain.length ? `<h2>Completed</h2>${slain.map(bossCard).join('')}${fin.map(questRow).join('')}` : ''}`;
 }
 
 function viewSkills() {
@@ -517,7 +627,7 @@ function viewShop() {
   return `<h2>Rewards <button class="btn sm" data-act="newReward">+ New</button></h2>
     <p class="muted small">Treat yourself – define your own rewards and redeem them with gold.</p>
     ${S.rewards.map(r => `<div class="card item"><span class="ic">${esc(r.icon)}</span>
-      <div class="qt"><b>${esc(r.name)}</b><div class="muted small">redeemed ${r.count}×</div></div>
+      <div class="qt"><b>${esc(r.name)}</b><div class="muted small">${r.kind === 'shield' ? `Owned: ${S.shields} · saves a streak on a missed day` : r.kind === 'potion' ? 'Heals 10 HP' : `redeemed ${r.count}×`}</div></div>
       <button class="btn sm" data-act="buy" data-id="${r.id}" ${S.gold < r.cost ? 'disabled' : ''}>${r.cost} 🪙</button>
       <button class="edit" data-act="editReward" data-id="${r.id}" aria-label="Edit">✎</button></div>`).join('') || '<div class="empty">No rewards yet.</div>'}`;
 }
@@ -552,6 +662,7 @@ function viewSetup() {
 
 function render() {
   applySettings();
+  S.hp = Math.max(0, Math.min(S.hp, maxHp()));
   $('#gold').textContent = S.gold; $('#sp').textContent = S.sp;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   const y = window.scrollY;
@@ -576,7 +687,7 @@ $('#view').onclick = e => {
   ({
     done: () => completeQuest(id), editQuest: () => editQuest(id), newQuest: () => editQuest(),
     skill: () => unlockSkill(id), newSkill: () => editSkill(), buy: () => buy(id),
-    editReward: () => editReward(id), newReward: () => editReward(), editChar,
+    editReward: () => editReward(id), newReward: () => editReward(), editChar, editBoss: () => editBoss(id), newBoss: () => editBoss(),
     builder: charBuilder, manual: manualEntry, newStat: () => editStat(), editStat: () => editStat(id),
     diffs: editDiffs, rules: editRules, design: editDesign, clearEx: clearExamples,
     export: exportData, import: () => $('#importFile').click(),
@@ -599,7 +710,8 @@ $('#importFile').onchange = async e => {
   } catch { toast('⚠️ Invalid file'); }
 };
 
-document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); }); // Tageswechsel
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { rollover(); render(); } }); // Tageswechsel
+rollover();
 render();
 if (!S.setupDone) { S.setupDone = true; save(); charBuilder(); } // Ersteinrichtung
 

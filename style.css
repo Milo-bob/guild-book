@@ -138,3 +138,10 @@ h2 .btn{font-variant:normal;font-family:var(--font);letter-spacing:0;text-transf
 .score{display:inline-block;min-width:40px;margin:0 0 8px;padding:1px 10px;border:2px solid var(--gold);border-radius:50%/70%;background:var(--bg);font-weight:700;font-size:14px}
 .feat{padding:6px 0;border-bottom:1px solid var(--line)}
 .feat:last-child{border-bottom:0}
+
+/* HP, Bosse, Klassen-Pfad */
+.bar.hp>div{background:var(--bad)}
+.path{display:inline-block;margin-top:6px;padding:2px 10px;border:1px solid var(--c,var(--gold));border-radius:99px;font-size:12px;font-weight:700;letter-spacing:.4px;color:var(--text);background:color-mix(in srgb,var(--c,var(--gold)) 18%,transparent)}
+.boss{display:flex;gap:12px;align-items:flex-start;border-left:4px solid var(--bad)}
+.boss .bico{font-size:38px;line-height:1;flex:none}
+.boss.done{opacity:.6;border-left-color:var(--good)}
