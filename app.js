@@ -15,7 +15,8 @@ const defaultDiffs = () => [
   { name: 'Hard', xp: 50, gold: 25 }, { name: 'Epic', xp: 100, gold: 50 },
 ];
 const THEMES = {
-  night:   { label: 'Night Violet', bg: '#14111f', card: '#241f3a', accent: '#8b6cff', gold: '#f5c542', text: '#ece8ff' },
+  dragon:  { label: 'Dragon Red (D&D)', bg: '#17110e', card: '#2a1f19', accent: '#b3262d', gold: '#d9a93c', text: '#f2e6cf' },
+  night:  { label: 'Night Violet', bg: '#14111f', card: '#241f3a', accent: '#8b6cff', gold: '#f5c542', text: '#ece8ff' },
   forest:  { label: 'Forest',      bg: '#0f1a14', card: '#1b2e23', accent: '#4cd38a', gold: '#e8c15a', text: '#e6f4ea' },
   ember:   { label: 'Ember',          bg: '#1a100e', card: '#2e1b17', accent: '#ff7a45', gold: '#ffd166', text: '#fbeee8' },
   ocean:   { label: 'Ocean',         bg: '#0d1722', card: '#162a3d', accent: '#3fa7ff', gold: '#f5c542', text: '#e6f1fb' },
@@ -29,7 +30,34 @@ const FONTS = {
   mono: 'ui-monospace,Consolas,monospace',
 };
 const STAT_COLORS = ['#e5604d', '#4cb5f5', '#8b6cff', '#f5a742', '#e86bc1', '#4cd38a', '#f5d742', '#9aa5b1'];
-const defaultSettings = () => ({ charBase: 100, statBase: 60, streakStep: 10, streakMax: 10, preset: 'night', theme: { ...THEMES.night }, font: 'system' });
+const defaultSettings = () => ({ charBase: 100, statBase: 60, streakStep: 10, streakMax: 10, preset: 'dragon', theme: (({ label, ...c }) => c)(THEMES.dragon), font: 'fantasy', bgImage: '', bgDim: 70 });
+const ALIGNMENTS = ['Lawful Good', 'Neutral Good', 'Chaotic Good', 'Lawful Neutral', 'True Neutral', 'Chaotic Neutral', 'Lawful Evil', 'Neutral Evil', 'Chaotic Evil'];
+const CHAR_KEYS = ['avatar', 'avatarImg', 'name', 'title', 'race', 'background', 'alignment', 'bio'];
+
+/* Datum-Helfer für wöchentliche Quests (Woche beginnt am Montag) */
+const monday = d => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return dstr(x); };
+const thisWeek = () => monday(today());
+const lastWeek = () => { const x = new Date(thisWeek() + 'T12:00:00'); x.setDate(x.getDate() - 7); return dstr(x); };
+
+/* Bild einlesen, verkleinern und als JPEG-Data-URL zurückgeben (square = mittig quadratisch zuschneiden) */
+const readImg = (file, max, square, q) => new Promise((res, rej) => {
+  const fr = new FileReader();
+  fr.onerror = rej;
+  fr.onload = () => {
+    const im = new Image();
+    im.onerror = rej;
+    im.onload = () => {
+      let sx = 0, sy = 0, sw = im.width, sh = im.height, cw, ch;
+      if (square) { const m = Math.min(sw, sh); sx = (sw - m) / 2; sy = (sh - m) / 2; sw = sh = m; cw = ch = Math.min(max, m); }
+      else { const k = Math.min(1, max / Math.max(sw, sh)); cw = Math.round(sw * k); ch = Math.round(sh * k); }
+      const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+      c.getContext('2d').drawImage(im, sx, sy, sw, sh, 0, 0, cw, ch);
+      res(c.toDataURL('image/jpeg', q));
+    };
+    im.src = fr.result;
+  };
+  fr.readAsDataURL(file);
+});
 let DIFF = [], CHAR_BASE = 100, STAT_BASE = 60;
 const diffOf = q => DIFF[Math.min(q.diff, DIFF.length - 1)];
 const baseReward = q => { const d = diffOf(q); return { d, xp: q.xp > 0 ? q.xp : d.xp, gold: q.gold > 0 ? q.gold : d.gold }; };
@@ -67,7 +95,7 @@ function defaults() {
   ].map(([id, stat, name, icon, cost, minLvl, req, desc]) => ({ id, stat, name, icon, cost, minLvl, req, desc, bonus: 5, unlocked: false }));
   return {
     v: 1, setupDone: false, settings: defaultSettings(), diffs: defaultDiffs(),
-    char: { name: 'Nameless Hero', title: 'Adventurer', avatar: '🧙', bio: '' },
+    char: { name: 'Nameless Hero', title: 'Adventurer', race: 'Human', background: 'Commoner', alignment: 'True Neutral', avatar: '🧙', avatarImg: '', bio: '' },
     xp: 0, gold: 0, sp: 0,
     stats, skills: sk,
     quests: [
@@ -88,6 +116,7 @@ function migrate(d) {
   d.settings = { ...defaultSettings(), ...(d.settings || {}) };
   d.settings.theme = { ...THEMES.night, ...d.settings.theme };
   d.diffs ||= defaultDiffs();
+  d.char = { race: '', background: '', alignment: '', avatarImg: '', ...d.char };
   d.stats.forEach((s, i) => s.color ||= STAT_COLORS[i % STAT_COLORS.length]);
   if (d.setupDone === undefined) d.setupDone = true;
   return d;
@@ -100,6 +129,9 @@ function applySettings() {
   DIFF = S.diffs.map((d, i) => ({ ...d, mark: '★'.repeat(Math.min(i + 1, 5)) }));
   ['bg', 'card', 'accent', 'gold', 'text'].forEach(k => r.setProperty('--' + k, t[k]));
   r.setProperty('--font', FONTS[st.font] || FONTS.system);
+  r.setProperty('--dim', (st.bgDim ?? 70) / 100);
+  $('#bgimg').style.backgroundImage = st.bgImage ? `url("${st.bgImage}")` : 'none';
+  document.body.classList.toggle('has-bg', !!st.bgImage);
   document.querySelector('meta[name=theme-color]').content = t.bg;
 }
 applySettings();
@@ -107,8 +139,11 @@ const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch
 const addLog = text => { S.log.unshift({ t: Date.now(), text }); S.log.length = Math.min(S.log.length, 300); };
 const stat = id => S.stats.find(s => s.id === id);
 const skill = id => S.skills.find(s => s.id === id);
-const questDone = q => q.type === 'daily' ? q.lastDone === today() : q.done;
-const streakOf = q => q.type === 'daily' && (q.lastDone === today() || q.lastDone === yesterday()) ? q.streak : 0;
+const isRepeat = q => q.type === 'daily' || q.type === 'weekly';
+const donePeriod = q => !!q.lastDone && (q.type === 'weekly' ? monday(q.lastDone) === thisWeek() : q.lastDone === today());
+const prevPeriod = q => !!q.lastDone && (q.type === 'weekly' ? monday(q.lastDone) === lastWeek() : q.lastDone === yesterday());
+const questDone = q => isRepeat(q) ? donePeriod(q) : q.done;
+const streakOf = q => isRepeat(q) && (donePeriod(q) || prevPeriod(q)) ? q.streak : 0;
 const bonusFor = statId => 1 + S.skills.filter(s => s.unlocked && s.stat === statId).reduce((a, s) => a + (+s.bonus || 0), 0) / 100;
 
 /* ---------- Aktionen ---------- */
@@ -119,9 +154,9 @@ function completeQuest(id) {
   const q = S.quests.find(x => x.id === id); if (!q || questDone(q)) return;
   snapshot();
   const b = baseReward(q);
-  if (q.type === 'daily') { q.streak = q.lastDone === yesterday() ? q.streak + 1 : 1; q.lastDone = today(); }
+  if (isRepeat(q)) { q.streak = prevPeriod(q) ? q.streak + 1 : 1; q.lastDone = today(); }
   else { q.done = true; q.lastDone = today(); }
-  const mult = (q.type === 'daily' ? 1 + Math.min(q.streak - 1, S.settings.streakMax) * S.settings.streakStep / 100 : 1);
+  const mult = (isRepeat(q) ? 1 + Math.min(q.streak - 1, S.settings.streakMax) * S.settings.streakStep / 100 : 1);
   const xp = Math.round(b.xp * mult * bonusFor(q.stat)), gold = Math.round(b.gold * mult);
   const lvBefore = levelOf(S.xp, CHAR_BASE), stBefore = levelOf(stat(q.stat).xp, STAT_BASE);
   S.xp += xp; S.gold += gold; stat(q.stat).xp += xp;
@@ -180,16 +215,22 @@ function form(title, fields, onSave, onDel) {
     if (f.type === 'select') return `<label class="f">${f.label}<select name="${f.key}">${f.options.map(([val, txt]) => `<option value="${esc(val)}"${String(val) === String(v) ? ' selected' : ''}>${esc(txt)}</option>`).join('')}</select></label>`;
     if (f.type === 'checks') return f.options.length ? `<div class="f"><div>${f.label}</div><div class="checks">${f.options.map(([val, txt]) => `<label><input type="checkbox" name="${f.key}" value="${esc(val)}"${(v || []).includes(val) ? ' checked' : ''}> ${esc(txt)}</label>`).join('')}</div></div>` : '';
     if (f.type === 'bool') return `<label class="f" style="display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" name="${f.key}"${v ? ' checked' : ''} style="width:auto;margin:0"> ${f.label}</label>`;
+    if (f.type === 'image') return `<div class="f"><div>${f.label}</div>${v ? `<img class="imgprev" src="${esc(v)}" alt="">` : ''}<input type="file" name="${f.key}" accept="image/*" style="margin-top:6px;width:100%">${v ? `<label class="chk"><input type="checkbox" name="${f.key}__rm"> Remove image</label>` : ''}</div>`;
     if (f.type === 'textarea') return `<label class="f">${f.label}<textarea name="${f.key}" rows="3">${esc(v)}</textarea></label>`;
     return `<label class="f">${f.label}<input name="${f.key}" type="${f.type || 'text'}" value="${esc(v)}"${f.type === 'number' && !f.neg ? ' min="0"' : ''}${f.req ? ' required' : ''}></label>`;
   };
   d.innerHTML = `<form id="f"><h3>${esc(title)}</h3>${fields.map(fh).join('')}<div class="row"><button type="button" class="btn ghost" id="cancel">Cancel</button>${onDel ? '<button type="button" class="btn danger" id="del">Delete</button>' : ''}<button class="btn">Save</button></div></form>`;
   $('#cancel').onclick = () => d.close();
   if (onDel) $('#del').onclick = () => { if (confirm('Really delete?')) { onDel(); d.close(); save(); render(); } };
-  $('#f').onsubmit = e => {
+  $('#f').onsubmit = async e => {
     e.preventDefault();
     const fd = new FormData(e.target), out = {};
-    fields.forEach(f => out[f.key] = f.type === 'checks' ? fd.getAll(f.key) : f.type === 'bool' ? fd.get(f.key) === 'on' : f.type === 'number' ? (f.neg ? (+fd.get(f.key) || 0) : Math.max(0, +fd.get(f.key) || 0)) : String(fd.get(f.key) ?? '').trim());
+    for (const f of fields.filter(x => x.type === 'image')) {
+      const file = fd.get(f.key);
+      try { out[f.key] = fd.get(f.key + '__rm') ? '' : file && file.size ? await readImg(file, f.max, f.square, f.quality) : (f.value || ''); }
+      catch { out[f.key] = f.value || ''; toast('⚠️ Could not read image'); }
+    }
+    fields.filter(x => x.type !== 'image').forEach(f => out[f.key] = f.type === 'checks' ? fd.getAll(f.key) : f.type === 'bool' ? fd.get(f.key) === 'on' : f.type === 'number' ? (f.neg ? (+fd.get(f.key) || 0) : Math.max(0, +fd.get(f.key) || 0)) : String(fd.get(f.key) ?? '').trim());
     onSave(out); d.close(); save(); render();
   };
   d.showModal();
@@ -203,7 +244,7 @@ function editQuest(id) {
   form(id ? 'Edit quest' : 'New quest', [
     { key: 'title', label: 'Title', value: q.title, req: true },
     { key: 'note', label: 'Note / description', type: 'textarea', value: q.note },
-    { key: 'type', label: 'Type', type: 'select', value: q.type, options: [['daily', '🔁 Daily (repeats)'], ['once', '⭐ One-time']] },
+    { key: 'type', label: 'Type', type: 'select', value: q.type, options: [['daily', '🔁 Daily (repeats every day)'], ['weekly', '📅 Weekly (resets on Monday)'], ['once', '⭐ One-time']] },
     { key: 'stat', label: 'Attribute', type: 'select', value: q.stat, options: statOptions() },
     { key: 'diff', label: 'Difficulty', type: 'select', value: q.diff, options: diffOptions() },
     { key: 'xp', label: 'Custom XP (0 = use difficulty value)', type: 'number', value: q.xp },
@@ -241,28 +282,31 @@ function editReward(id) {
   ], o => { if (id) Object.assign(r, o); else S.rewards.push({ id: uid(), ...o, count: 0 }); },
   id ? () => { S.rewards = S.rewards.filter(x => x.id !== id); } : null);
 }
+const charFields = () => [
+  { key: 'avatarImg', label: 'Portrait (image, optional)', type: 'image', value: S.char.avatarImg, max: 256, square: true, quality: 0.85 },
+  { key: 'avatar', label: 'Avatar emoji (used if there is no portrait)', value: S.char.avatar },
+  { key: 'name', label: 'Character name', value: S.char.name, req: true },
+  { key: 'title', label: 'Class', value: S.char.title },
+  { key: 'race', label: 'Race / origin', value: S.char.race },
+  { key: 'background', label: 'Background', value: S.char.background },
+  { key: 'alignment', label: 'Alignment', type: 'select', value: S.char.alignment, options: [['', '— none —'], ...ALIGNMENTS.map(a => [a, a])] },
+  { key: 'bio', label: 'Backstory & goals', type: 'textarea', value: S.char.bio },
+];
+const pickChar = o => Object.fromEntries(CHAR_KEYS.map(k => [k, o[k]]));
 function editChar() {
-  form('Character Sheet', [
-    { key: 'avatar', label: 'Avatar (Emoji)', value: S.char.avatar },
-    { key: 'name', label: 'Name', value: S.char.name, req: true },
-    { key: 'title', label: 'Class / Title', value: S.char.title },
-    { key: 'bio', label: 'About me / goals', type: 'textarea', value: S.char.bio },
-  ], o => Object.assign(S.char, o));
+  form('Character Sheet', charFields(), o => Object.assign(S.char, pickChar(o)));
 }
 
 /* Character Builder: Startwerte frei setzen (Level, Gold, Skillpunkte, Level je Attribut) */
 function charBuilder() {
   form('🧙 Character Builder', [
-    { key: 'avatar', label: 'Avatar (Emoji)', value: S.char.avatar },
-    { key: 'name', label: 'Name', value: S.char.name, req: true },
-    { key: 'title', label: 'Class / Title', value: S.char.title },
-    { key: 'bio', label: 'About me / goals', type: 'textarea', value: S.char.bio },
+    ...charFields(),
     { key: 'clvl', label: 'Overall level', type: 'number', value: levelOf(S.xp, CHAR_BASE) },
     { key: 'gold', label: 'Gold', type: 'number', value: S.gold },
     { key: 'sp', label: 'Free skill points', type: 'number', value: S.sp },
     ...S.stats.map(s => ({ key: 'lv_' + s.id, label: `${s.icon} ${esc(s.name)} – current level`, type: 'number', value: levelOf(s.xp, STAT_BASE) })),
   ], o => {
-    Object.assign(S.char, { avatar: o.avatar, name: o.name, title: o.title, bio: o.bio });
+    Object.assign(S.char, pickChar(o));
     S.xp = setLevel(S.xp, o.clvl, CHAR_BASE);
     S.gold = o.gold; S.sp = o.sp;
     S.stats.forEach(s => s.xp = setLevel(s.xp, o['lv_' + s.id], STAT_BASE));
@@ -352,10 +396,13 @@ function editDesign() {
     { key: 'gold', label: 'Gold', type: 'color', value: t.gold },
     { key: 'text', label: 'Text', type: 'color', value: t.text },
     { key: 'font', label: 'Font', type: 'select', value: st.font, options: [['system', 'Default'], ['serif', 'Serif (Georgia)'], ['fantasy', 'Fantasy (Palatino)'], ['mono', 'Monospace']] },
+    { key: 'bgImage', label: 'Background image (optional)', type: 'image', value: st.bgImage, max: 1280, quality: 0.7 },
+    { key: 'bgDim', label: 'Background dimming in % (higher = darker, easier to read)', type: 'number', value: st.bgDim ?? 70 },
   ], o => {
     st.preset = o.preset;
     st.theme = o.preset === 'custom' ? { bg: o.bg, card: o.card, accent: o.accent, gold: o.gold, text: o.text } : (({ label, ...c }) => c)(THEMES[o.preset]);
     st.font = o.font;
+    st.bgImage = o.bgImage; st.bgDim = Math.min(95, o.bgDim);
   });
 }
 
@@ -379,47 +426,73 @@ function radar() {
   return `<svg class="radar" viewBox="-10 -10 220 220" role="img" aria-label="Attribute overview">${rings}<polygon class="data" points="${data}"/>${labels}</svg>`;
 }
 
-function viewHero() {
-  const p = progress(S.xp, CHAR_BASE);
-  const dailies = S.quests.filter(q => q.type === 'daily'), doneN = dailies.filter(questDone).length;
-  const pass = S.skills.filter(s => s.unlocked);
-  return `
-  <div class="card"><div class="hero">
-    <div class="avatar">${esc(S.char.avatar)}</div>
-    <div style="flex:1;min-width:0"><h1>${esc(S.char.name)}</h1>
-      <div class="muted">${esc(S.char.title)} · <span class="lvl">Level ${p.l}</span></div>
-      <div class="bar xp" style="margin-top:8px"><div style="width:${p.pct}%"></div></div>
-      <div class="muted small">${p.cur} / ${p.need} XP</div></div>
-    <button class="edit" data-act="editChar" title="Edit">✎</button>
-  </div>${S.char.bio ? `<p class="muted small" style="margin:12px 0 0;white-space:pre-wrap">${esc(S.char.bio)}</p>` : ''}</div>
+function avatarHtml() {
+  return S.char.avatarImg ? `<img src="${esc(S.char.avatarImg)}" alt="">` : esc(S.char.avatar);
+}
+const abilityScore = lvl => 9 + lvl;                       // Level 1 = 10 (modifier +0), wie bei D&D
+const abilityMod = score => Math.floor((score - 10) / 2);
+const signed = n => (n >= 0 ? '+' : '') + n;
 
-  <div class="card"><div class="muted">Today: <b>${doneN}/${dailies.length}</b> dailies done</div>
+function viewHero() {
+  const c = S.char, p = progress(S.xp, CHAR_BASE), prof = 2 + Math.floor((p.l - 1) / 4);   // Proficiency Bonus wie in D&D 5e
+  const dailies = S.quests.filter(q => q.type === 'daily'), doneN = dailies.filter(questDone).length;
+  const weeklies = S.quests.filter(q => q.type === 'weekly'), weekN = weeklies.filter(questDone).length;
+  const feats = S.skills.filter(s => s.unlocked);
+  const best = Math.max(0, ...S.quests.map(streakOf));
+  const sub = [c.race, c.background, c.alignment].filter(Boolean).map(esc).join(' · ');
+  return `
+  <div class="card banner"><div class="hero">
+    <div class="avatar">${avatarHtml()}</div>
+    <div class="hname"><h1>${esc(c.name)}</h1>
+      <div class="cls">${esc(c.title)} <span class="lvl">· Level ${p.l}</span></div>
+      <div class="muted small">${sub}</div></div>
+    <button class="edit" data-act="editChar" title="Edit">✎</button>
+  </div>
+  <div class="bar xp" style="margin-top:12px"><div style="width:${p.pct}%"></div></div>
+  <div class="xpline muted small"><span>Experience</span><span>${p.cur} / ${p.need} XP</span></div></div>
+
+  <div class="vitals">
+    <div class="vit"><b>${signed(prof)}</b><span>Prof. bonus</span></div>
+    <div class="vit"><b>🔥 ${best}</b><span>Streak</span></div>
+    <div class="vit"><b>${S.gold}</b><span>Gold</span></div>
+    <div class="vit"><b>${S.sp}</b><span>Skill pts</span></div>
+  </div>
+
+  <h2>Ability Scores</h2>
+  <div class="abilities">${S.stats.map(s => { const sp = progress(s.xp, STAT_BASE), sc = abilityScore(sp.l); return `
+    <div class="ability" style="--c:${esc(s.color)}"><div class="an">${s.icon} ${esc(s.name)}</div>
+      <div class="mod">${signed(abilityMod(sc))}</div><div class="score">${sc}</div>
+      <div class="bar"><div style="width:${sp.pct}%;background:${esc(s.color)}"></div></div>
+      <div class="muted small">Level ${sp.l}</div></div>`; }).join('')}</div>
+  <p class="muted small" style="margin:6px 2px 0">Score = 9 + attribute level · modifier = (score − 10) ÷ 2, rounded down.</p>
+
+  <h2>Today</h2>
+  <div class="card"><div class="muted">Dailies: <b>${doneN}/${dailies.length}</b>${weeklies.length ? ` · Weekly: <b>${weekN}/${weeklies.length}</b>` : ''}</div>
     <div class="bar" style="margin-top:6px"><div style="width:${dailies.length ? doneN / dailies.length * 100 : 0}%"></div></div>
     <div class="row" style="justify-content:flex-start;margin-top:12px"><button class="btn sm ghost" data-act="manual">✍️ Log a change</button><button class="btn sm ghost" data-act="builder">🧙 Character Builder</button></div></div>
 
-  <h2>Attributes</h2>
-  <div class="card">${radar()}
-    ${S.stats.map(s => { const sp = progress(s.xp, STAT_BASE); return `
-      <div class="stat"><span style="font-size:22px">${s.icon}</span><b>${esc(s.name)}</b><span class="lvl">Lv ${sp.l}</span>
-      <div class="bar"><div style="width:${sp.pct}%;background:${esc(s.color)}"></div></div></div>`; }).join('')}
-  </div>
+  <h2>Features &amp; Traits</h2>
+  <div class="card">${feats.length ? feats.map(s => `<div class="feat"><b>${s.icon} ${esc(s.name)}</b> <span class="muted small">+${s.bonus}% ${esc(stat(s.stat)?.name ?? '')} XP</span>${s.desc ? `<div class="muted small">${esc(s.desc)}</div>` : ''}</div>`).join('') : '<span class="muted">None yet – unlock some in the skill tree.</span>'}</div>
 
-  <h2>Active skills</h2>
-  <div class="card">${pass.length ? pass.map(s => `<span class="pill">${s.icon} ${esc(s.name)} <span class="muted">+${s.bonus}% ${esc(stat(s.stat).name)}</span></span>`).join('') : '<span class="muted">None yet – unlock some in the skill tree.</span>'}</div>`;
+  ${c.bio ? `<h2>Backstory &amp; Goals</h2><div class="card"><p class="small" style="margin:0;white-space:pre-wrap">${esc(c.bio)}</p></div>` : ''}
+
+  ${S.stats.length > 2 ? `<h2>Attribute Chart</h2><div class="card">${radar()}</div>` : ''}`;
 }
 
 function questRow(q) {
   const done = questDone(q), { d, xp, gold } = baseReward(q), st = stat(q.stat) || S.stats[0], sk = streakOf(q);
   return `<div class="card quest${done ? ' done' : ''}">
     <button class="check" data-act="done" data-id="${q.id}" ${done ? 'disabled' : ''} aria-label="Complete">${done ? '✓' : ''}</button>
-    <div class="qt"><b>${esc(q.title)}</b><span class="muted small">${st.icon} ${esc(st.name)} · <span class="diff">${d.mark}</span>${sk > 1 ? ` · 🔥 ${sk}` : ''}</span>${q.note ? `<span class="muted small" style="display:block">${esc(q.note)}</span>` : ''}</div>
+    <div class="qt"><b>${esc(q.title)}</b><span class="muted small">${st.icon} ${esc(st.name)} · <span class="diff">${d.mark}</span>${q.type === 'weekly' ? ' · 📅' : ''}${sk > 1 ? ` · 🔥 ${sk}` : ''}</span>${q.note ? `<span class="muted small" style="display:block">${esc(q.note)}</span>` : ''}</div>
     <div class="reward">+${xp} XP<br>+${gold} 🪙</div>
     <button class="edit" data-act="editQuest" data-id="${q.id}" aria-label="Edit">✎</button></div>`;
 }
 function viewQuests() {
-  const daily = S.quests.filter(q => q.type === 'daily'), once = S.quests.filter(q => q.type === 'once' && !q.done), fin = S.quests.filter(q => q.type === 'once' && q.done);
+  const by = t => S.quests.filter(q => q.type === t);
+  const once = S.quests.filter(q => q.type === 'once' && !q.done), fin = S.quests.filter(q => q.type === 'once' && q.done);
   return `<h2>Daily quests <button class="btn sm" data-act="newQuest">+ New</button></h2>
-    ${daily.map(questRow).join('') || '<div class="empty">No daily quests.</div>'}
+    ${by('daily').map(questRow).join('') || '<div class="empty">No daily quests.</div>'}
+    <h2>Weekly quests</h2>${by('weekly').map(questRow).join('') || '<div class="empty">No weekly quests – pick “Weekly” when creating a quest.</div>'}
     <h2>Main quests</h2>${once.map(questRow).join('') || '<div class="empty">No open quests.</div>'}
     ${fin.length ? `<h2>Completed</h2>${fin.map(questRow).join('')}` : ''}`;
 }
