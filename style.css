@@ -21,7 +21,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .brand{font-weight:700;letter-spacing:.5px}
 .chips{display:flex;gap:8px}
 .chip{background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:14px}
-.chip.gold b{color:var(--gold)} .chip.sp b{color:var(--accent)}
+.chip.gold b{color:var(--gold)} .chip.sp b{color:var(--text)}
 
 main{max-width:640px;margin:0 auto;padding:16px}
 h2{margin:20px 0 10px;font-size:15px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
