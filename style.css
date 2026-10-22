@@ -145,3 +145,21 @@ h2 .btn{font-variant:normal;font-family:var(--font);letter-spacing:0;text-transf
 .boss{display:flex;gap:12px;align-items:flex-start;border-left:4px solid var(--bad)}
 .boss .bico{font-size:38px;line-height:1;flex:none}
 .boss.done{opacity:.6;border-left-color:var(--good)}
+
+/* Fortschritts-Kästchen, Streak, Header-XP */
+.top{flex-wrap:wrap}
+.xpstrip{flex:0 0 100%;display:flex;gap:8px;align-items:center;font-size:12px;margin-top:6px;color:var(--muted)}
+.xpstrip b{color:var(--gold);font-family:var(--serif)}
+.xpstrip .bar{flex:1;height:8px}
+.thead{display:flex;gap:10px;align-items:center}
+.boxes{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.bx{width:32px;height:32px;border-radius:8px;border:2px solid var(--accent);background:transparent;display:inline-grid;place-items:center;font-size:17px;cursor:pointer;padding:0}
+.bx.on{background:var(--good);border-color:var(--good);color:#06210f;cursor:default;font-weight:700}
+.track.done{opacity:.65}
+.srow{display:flex;gap:12px;align-items:baseline;justify-content:space-between}
+.srow b{font-family:var(--serif);font-size:20px}
+.days{display:flex;gap:4px;margin-top:10px;flex-wrap:wrap}
+.dbx{width:22px;height:22px;border-radius:5px;border:1px solid var(--line);display:inline-grid;place-items:center;font-size:12px;color:var(--bg)}
+.dbx.on{background:var(--gold);border-color:var(--gold)}
+.dbx.sh{border-color:var(--accent);color:var(--text)}
+.dbx.today{outline:2px solid var(--text);outline-offset:1px}

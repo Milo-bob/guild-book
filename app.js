@@ -104,9 +104,10 @@ function defaults() {
     quests: [
       { id: uid(), title: 'Stretch for 10 minutes', stat: 'kor', diff: 0, type: 'daily', done: false, lastDone: null, streak: 0 },
       { id: uid(), title: 'Read 20 pages', stat: 'geist', diff: 1, type: 'daily', done: false, lastDone: null, streak: 0 },
+      { id: uid(), title: 'Read 10 chapters', stat: 'geist', diff: 1, type: 'track', boxes: 10, filled: 0, loop: false, done: false, lastDone: null, streak: 0 },
       { id: uid(), title: 'Tidy up the apartment', stat: 'disz', diff: 2, type: 'once', done: false, lastDone: null, streak: 0 },
     ],
-    hp: 20, shields: 0, lastCheck: today(), bosses: [], hpIntro: true,
+    hp: 20, shields: 0, lastCheck: today(), bosses: [], hpIntro: true, days: {}, bestStreak: 0, claimedRun: 0,
     rewards: [
       { id: uid(), name: 'Streak shield', icon: '🛡️', cost: 100, count: 0, kind: 'shield' },
       { id: uid(), name: 'Healing potion', icon: '🧪', cost: 40, count: 0, kind: 'potion' },
@@ -124,7 +125,7 @@ function migrate(d) {
   d.diffs ||= defaultDiffs();
   d.char = { race: '', background: '', alignment: '', avatarImg: '', ...d.char };
   d.hp ??= 20 + 4 * (levelOf(d.xp || 0, d.settings.charBase) - 1);
-  d.shields ??= 0; d.bosses ||= []; d.lastCheck ||= today();
+  d.shields ??= 0; d.bosses ||= []; d.lastCheck ||= today(); d.days ||= {}; d.bestStreak ??= 0; d.claimedRun ??= 0;
   d.quests.forEach(q => q.created ||= today());
   d.stats.forEach(s => { if (s.cls === undefined) s.cls = STAT_CLASS[s.id] || ''; });
   if (!d.hpIntro) {
@@ -165,25 +166,66 @@ let undoSnap = null;
 function snapshot() { undoSnap = JSON.stringify(S); }
 
 function completeQuest(id) {
-  const q = S.quests.find(x => x.id === id); if (!q || questDone(q)) return;
+  const q = S.quests.find(x => x.id === id); if (!q || questDone(q) || q.type === 'track') return;
   snapshot();
   const b = baseReward(q);
   if (isRepeat(q)) { q.streak = prevPeriod(q) ? q.streak + 1 : 1; q.lastDone = today(); }
   else { q.done = true; q.lastDone = today(); }
   const mult = (isRepeat(q) ? 1 + Math.min(q.streak - 1, S.settings.streakMax) * S.settings.streakStep / 100 : 1);
-  const xp = Math.round(b.xp * mult * bonusFor(q.stat)), gold = Math.round(b.gold * mult);
+  payout(q, b.xp, b.gold, mult, q.title);
+}
+
+// Ein Kästchen eines Fortschritts-Trackers ausfüllen: jedes Kästchen zahlt aus, das letzte gibt 3x
+function fillBox(id) {
+  const q = S.quests.find(x => x.id === id); if (!q || q.type !== 'track' || q.done) return;
+  snapshot();
+  const b = baseReward(q); q.filled = (q.filled || 0) + 1; q.lastDone = today();
+  const n = q.filled, full = n >= q.boxes;
+  if (full) { if (q.loop) { q.runs = (q.runs || 0) + 1; q.filled = 0; } else q.done = true; }
+  payout(q, b.xp, b.gold, full ? 3 : 1, `${q.title} [${full ? 'complete! ×3' : n + '/' + q.boxes}]`);
+}
+
+function payout(q, baseXp, baseGold, mult, label) {
+  const gs = 1 + Math.min(computeStreak(), 30) / 100;          // globaler Streak-Bonus: +1% XP pro Tag, max +30%
+  const xp = Math.round(baseXp * mult * bonusFor(q.stat) * gs), gold = Math.round(baseGold * mult);
   const lvBefore = levelOf(S.xp, CHAR_BASE), stBefore = levelOf(stat(q.stat).xp, STAT_BASE);
   S.xp += xp; S.gold += gold; stat(q.stat).xp += xp;
-  const slain = hitBosses(q, xp);
+  const slain = hitBosses(q, xp), ms = recordActivity();
   const lvAfter = levelOf(S.xp, CHAR_BASE), stAfter = levelOf(stat(q.stat).xp, STAT_BASE);
   S.sp += lvAfter - lvBefore;
   S.hp = lvAfter > lvBefore ? maxHp() : Math.min(maxHp(), S.hp + 1 + q.diff);
-  addLog(`✅ ${q.title}  (+${xp} XP, +${gold} 🪙)`);
+  addLog(`✅ ${label}  (+${xp} XP, +${gold} 🪙)`);
   save(); render();
   if (slain.length) toast(`⚔️ ${slain.map(b => b.name).join(', ')} defeated! +${slain.reduce((a, b) => a + b.gold, 0)} 🪙`, true, true);
+  else if (ms) toast(`🔥 ${ms.m}-day streak! +${ms.xp} XP · +${ms.gold} 🪙`, true, true);
   else if (lvAfter > lvBefore) { addLog(`🎉 Reached level ${lvAfter}! +${lvAfter - lvBefore} skill point(s)`); save(); toast(`🎉 LEVEL ${lvAfter}! +${lvAfter - lvBefore} ✨`, true, true); }
   else if (stAfter > stBefore) { addLog(`⬆️ ${stat(q.stat).name} Level ${stAfter}`); save(); toast(`⬆️ ${stat(q.stat).name} Lv ${stAfter}`, true, true); }
   else toast(`+${xp} XP · +${gold} 🪙`, true);
+}
+
+/* ---------- Streak: jeder Tag mit mindestens einer erledigten Quest/Box zählt ---------- */
+const MILESTONES = [3, 7, 14, 30, 60, 100, 200, 365];
+const milestoneReward = m => ({ xp: 5 * m, gold: 2 * m });
+const dayActive = v => v > 0 || v === -1;                  // -1 = Tag durch Streak-Schild gerettet
+function computeStreak() {
+  const d = new Date(); let n = 0;
+  if (!dayActive(S.days[dstr(d)])) d.setDate(d.getDate() - 1);   // heute noch offen: ab gestern zählen
+  while (dayActive(S.days[dstr(d)])) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+// Aktivität heute eintragen, Meilenstein-Boni vergeben (einmal pro Serie)
+function recordActivity() {
+  const t = today();
+  S.days[t] = (S.days[t] > 0 ? S.days[t] : 0) + 1;
+  const old = Object.keys(S.days).sort(); while (old.length > 400) delete S.days[old.shift()];
+  const n = computeStreak(); S.bestStreak = Math.max(S.bestStreak || 0, n);
+  if (n < (S.claimedRun || 0)) S.claimedRun = 0;
+  const hit = MILESTONES.filter(m => m <= n && m > (S.claimedRun || 0));
+  if (!hit.length) return null;
+  const m = hit[hit.length - 1], r = milestoneReward(m);
+  S.claimedRun = m; S.xp += r.xp; S.gold += r.gold;
+  addLog(`🔥 ${m}-day streak! +${r.xp} XP, +${r.gold} 🪙`);
+  return { m, ...r };
 }
 
 /* ---------- HP, Bosse, Klassen-Pfad ---------- */
@@ -217,16 +259,20 @@ function rollover() {
   for (let guard = 0; dstr(d) < t && guard < 30; d.setDate(d.getDate() + 1), guard++) {
     const D = dstr(d);
     const missed = S.quests.filter(q => q.type === 'daily' && (q.created || '') < D && (q.lastDone || '') < D);
-    if (missed.length) {
-      if (S.shields > 0 && missed.some(q => q.streak > 0)) { S.shields--; shields++; missed.forEach(q => { if (q.streak > 0) q.lastDone = D; }); }
-      else if (S.settings.hpOn) dmg += missed.reduce((a, q) => a + 2 * (q.diff + 1), 0);
-    }
+    const prev = new Date(d); prev.setDate(prev.getDate() - 1);
+    const runAlive = !dayActive(S.days[D]) && dayActive(S.days[dstr(prev)]);       // globale Serie würde heute reißen
+    if (S.shields > 0 && (missed.some(q => q.streak > 0) || runAlive)) {
+      S.shields--; shields++;
+      if (!dayActive(S.days[D])) S.days[D] = -1;
+      missed.forEach(q => { if (q.streak > 0) q.lastDone = D; });
+    } else if (missed.length && S.settings.hpOn) dmg += missed.reduce((a, q) => a + 2 * (q.diff + 1), 0);
     if (d.getDay() === 0 && S.settings.hpOn) {   // Sonntag = Wochenende
       const wk = monday(D);
       dmg += S.quests.filter(q => q.type === 'weekly' && (q.created || '') < wk && !(q.lastDone && monday(q.lastDone) >= wk)).reduce((a, q) => a + 4 * (q.diff + 1), 0);
     }
   }
   S.lastCheck = t;
+  if (computeStreak() < (S.claimedRun || 0)) S.claimedRun = 0;
   if (shields) { notes.push(`🛡️ ${shields} streak shield${shields > 1 ? 's' : ''} used`); addLog(`🛡️ Streak shield used (${shields}×)`); }
   if (dmg) { S.hp -= dmg; notes.push(`💔 −${dmg} HP from missed quests`); addLog(`💔 Missed quests cost ${dmg} HP`); }
   if (S.hp <= 0) {
@@ -312,19 +358,21 @@ const statOptions = () => S.stats.map(s => [s.id, `${s.icon} ${s.name}`]);
 const diffOptions = () => DIFF.map((d, i) => [i, `${d.mark} ${d.name} (${d.xp} XP / ${d.gold} 🪙)`]);
 
 function editQuest(id) {
-  const q = S.quests.find(x => x.id === id) || { title: '', stat: S.stats[0].id, diff: 1, type: 'daily', xp: 0, gold: 0, note: '' };
+  const q = S.quests.find(x => x.id === id) || { title: '', stat: S.stats[0].id, diff: 1, type: 'daily', xp: 0, gold: 0, note: '', boxes: 10, loop: false };
   form(id ? 'Edit quest' : 'New quest', [
     { key: 'title', label: 'Title', value: q.title, req: true },
     { key: 'note', label: 'Note / description', type: 'textarea', value: q.note },
-    { key: 'type', label: 'Type', type: 'select', value: q.type, options: [['daily', '🔁 Daily (repeats every day)'], ['weekly', '📅 Weekly (resets on Monday)'], ['once', '⭐ One-time']] },
+    { key: 'type', label: 'Type', type: 'select', value: q.type, options: [['daily', '🔁 Daily (repeats every day)'], ['weekly', '📅 Weekly (resets on Monday)'], ['track', '🔲 Progress boxes (fill one per step)'], ['once', '⭐ One-time']] },
     { key: 'stat', label: 'Attribute', type: 'select', value: q.stat, options: statOptions() },
     { key: 'diff', label: 'Difficulty', type: 'select', value: q.diff, options: diffOptions() },
     { key: 'xp', label: 'Custom XP (0 = use difficulty value)', type: 'number', value: q.xp },
     { key: 'gold', label: 'Custom gold (0 = use difficulty value)', type: 'number', value: q.gold },
+    { key: 'boxes', label: 'Boxes (only for “Progress boxes”, 1–60). XP/gold are paid per box, the last box pays ×3', type: 'number', value: q.boxes ?? 10 },
+    { key: 'loop', label: 'Progress boxes: start over when all are filled', type: 'bool', value: q.loop },
   ], o => {
-    o.diff = +o.diff;
-    if (id) Object.assign(q, o);
-    else S.quests.push({ id: uid(), ...o, done: false, lastDone: null, streak: 0, created: today() });
+    o.diff = +o.diff; o.boxes = Math.min(60, Math.max(1, o.boxes));
+    if (id) { Object.assign(q, o); q.filled = Math.min(q.filled || 0, q.boxes); }
+    else S.quests.push({ id: uid(), ...o, done: false, lastDone: null, streak: 0, filled: 0, created: today() });
   }, id ? () => { S.quests = S.quests.filter(x => x.id !== id); } : null);
 }
 function editSkill(id) {
@@ -529,6 +577,18 @@ const abilityScore = lvl => 9 + lvl;                       // Level 1 = 10 (modi
 const abilityMod = score => Math.floor((score - 10) / 2);
 const signed = n => (n >= 0 ? '+' : '') + n;
 
+function streakCard() {
+  const n = computeStreak(), nx = MILESTONES.find(m => m > n), pv = [...MILESTONES].reverse().find(m => m <= n) || 0;
+  const r = nx ? milestoneReward(nx) : null, pct = nx ? (n - pv) / (nx - pv) * 100 : 100;
+  const boxes = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (13 - i)); const k = dstr(d), v = S.days[k];
+    return `<span class="dbx${v > 0 ? ' on' : v === -1 ? ' sh' : ''}${i === 13 ? ' today' : ''}" title="${k}">${v === -1 ? '🛡' : v > 0 ? '✓' : ''}</span>`;
+  }).join('');
+  return `<div class="srow"><b>🔥 ${n} day${n === 1 ? '' : 's'}</b><span class="muted small">Best: ${S.bestStreak || 0}</span><span class="muted small">+${Math.min(n, 30)}% XP</span></div>
+    <div class="bar xp" style="margin-top:8px"><div style="width:${pct}%"></div></div>
+    <div class="xpline muted small"><span>${pv} days</span><span>${nx ? `Next: ${nx} days · +${r.xp} XP, +${r.gold} 🪙` : 'Top milestone reached!'}</span></div>
+    <div class="days">${boxes}</div><div class="muted small" style="margin-top:4px">Last 14 days – finish at least one quest or box a day to keep the streak.</div>`;
+}
 function viewHero() {
   const c = S.char, p = progress(S.xp, CHAR_BASE), prof = 2 + Math.floor((p.l - 1) / 4);   // Proficiency Bonus wie in D&D 5e
   const dailies = S.quests.filter(q => q.type === 'daily'), doneN = dailies.filter(questDone).length;
@@ -557,6 +617,9 @@ function viewHero() {
     <div class="vit"><b>🛡️ ${S.shields}</b><span>Shields</span></div>
   </div>
 
+  <h2>Streak</h2>
+  <div class="card streak">${streakCard()}</div>
+
   <h2>Ability Scores</h2>
   <div class="abilities">${S.stats.map(s => { const sp = progress(s.xp, STAT_BASE), sc = abilityScore(sp.l); return `
     <div class="ability" style="--c:${esc(s.color)}"><div class="an">${s.icon} ${esc(s.name)}</div>
@@ -578,7 +641,16 @@ function viewHero() {
   ${S.stats.length > 2 ? `<h2>Attribute Chart</h2><div class="card">${radar()}</div>` : ''}`;
 }
 
+function trackCard(q) {
+  const done = questDone(q), { d, xp, gold } = baseReward(q), st = stat(q.stat) || S.stats[0], n = q.filled || 0;
+  return `<div class="card track${done ? ' done' : ''}"><div class="thead">
+    <div class="qt"><b>${esc(q.title)}</b><span class="muted small">${st.icon} ${esc(st.name)} · <span class="diff">${d.mark}</span> · 🔲 ${q.loop ? '🔁 ' : ''}${n}/${q.boxes}${q.runs ? ` · ✔ ${q.runs}×` : ''}</span>${q.note ? `<span class="muted small" style="display:block">${esc(q.note)}</span>` : ''}</div>
+    <div class="reward">+${xp} XP<br>+${gold} 🪙<br><span class="muted">per box</span></div>
+    <button class="edit" data-act="editQuest" data-id="${q.id}" aria-label="Edit">✎</button></div>
+    <div class="boxes">${Array.from({ length: q.boxes }, (_, i) => i < n || done ? '<span class="bx on">✓</span>' : `<button class="bx" data-act="box" data-id="${q.id}" aria-label="Fill box ${i + 1}"></button>`).join('')}</div></div>`;
+}
 function questRow(q) {
+  if (q.type === 'track') return trackCard(q);
   const done = questDone(q), { d, xp, gold } = baseReward(q), st = stat(q.stat) || S.stats[0], sk = streakOf(q);
   return `<div class="card quest${done ? ' done' : ''}">
     <button class="check" data-act="done" data-id="${q.id}" ${done ? 'disabled' : ''} aria-label="Complete">${done ? '✓' : ''}</button>
@@ -596,13 +668,15 @@ function bossCard(b) {
 }
 function viewQuests() {
   const by = t => S.quests.filter(q => q.type === t);
-  const once = S.quests.filter(q => q.type === 'once' && !q.done), fin = S.quests.filter(q => q.type === 'once' && q.done);
+  const once = S.quests.filter(q => q.type === 'once' && !q.done), fin = S.quests.filter(q => (q.type === 'once' || q.type === 'track') && q.done);
+  const tracks = S.quests.filter(q => q.type === 'track' && !q.done);
   const bosses = S.bosses.filter(b => !b.defeated), slain = S.bosses.filter(b => b.defeated);
   return `<h2>Boss battles <button class="btn sm" data-act="newBoss">+ Boss</button></h2>
     ${bosses.map(bossCard).join('') || '<div class="empty">No active boss – create one for your biggest goal.</div>'}
     <h2>Daily quests <button class="btn sm" data-act="newQuest">+ New</button></h2>
     ${by('daily').map(questRow).join('') || '<div class="empty">No daily quests.</div>'}
     <h2>Weekly quests</h2>${by('weekly').map(questRow).join('') || '<div class="empty">No weekly quests – pick “Weekly” when creating a quest.</div>'}
+    <h2>Progress trackers</h2>${tracks.map(questRow).join('') || '<div class="empty">No trackers – pick “Progress boxes” when creating a quest.</div>'}
     <h2>Main quests</h2>${once.map(questRow).join('') || '<div class="empty">No open quests.</div>'}
     ${fin.length || slain.length ? `<h2>Completed</h2>${slain.map(bossCard).join('')}${fin.map(questRow).join('')}` : ''}`;
 }
@@ -664,6 +738,8 @@ function render() {
   applySettings();
   S.hp = Math.max(0, Math.min(S.hp, maxHp()));
   $('#gold').textContent = S.gold; $('#sp').textContent = S.sp;
+  const hp_ = progress(S.xp, CHAR_BASE);
+  $('#hlv').textContent = 'Lv ' + hp_.l; $('#hxpf').style.width = hp_.pct + '%'; $('#hxpt').textContent = hp_.cur + ' / ' + hp_.need + ' XP';
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   const y = window.scrollY;
   $('#view').innerHTML = { hero: viewHero, quests: viewQuests, skills: viewSkills, shop: viewShop, log: viewLog, setup: viewSetup }[tab]();
@@ -687,7 +763,7 @@ $('#view').onclick = e => {
   ({
     done: () => completeQuest(id), editQuest: () => editQuest(id), newQuest: () => editQuest(),
     skill: () => unlockSkill(id), newSkill: () => editSkill(), buy: () => buy(id),
-    editReward: () => editReward(id), newReward: () => editReward(), editChar, editBoss: () => editBoss(id), newBoss: () => editBoss(),
+    editReward: () => editReward(id), newReward: () => editReward(), editChar, editBoss: () => editBoss(id), newBoss: () => editBoss(), box: () => fillBox(id),
     builder: charBuilder, manual: manualEntry, newStat: () => editStat(), editStat: () => editStat(id),
     diffs: editDiffs, rules: editRules, design: editDesign, clearEx: clearExamples,
     export: exportData, import: () => $('#importFile').click(),
